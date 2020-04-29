@@ -4,9 +4,32 @@
 #==============================================================================#
 
 # .gitignore rules for CacheChecker
-*
+!README.txt
 !.gitignore
+
+*
+!include/
+include/*
+
+!include/clang/
+include/clang/*
+
+!include/clang/StaticAnalyzer/
+include/clang/StaticAnalyzer/*
+
+!include/clang/StaticAnalyzer/Checkers/
+include/clang/StaticAnalyzers/Checkers/*
 !include/clang/StaticAnalyzer/Checkers/Checkers.td
+
+!lib/
+lib/*
+
+!lib/StaticAnalyzer/
+lib/StaticAnalyzer/*
+
+!lib/StaticAnalyzer/Checkers/
+lib/StaticAnalyzer/Checkers/*
+
 !lib/StaticAnalyzer/Checkers/CMakeLists.txt
 !lib/StaticAnalyzer/Checkers/CacheChecker.cpp
 
