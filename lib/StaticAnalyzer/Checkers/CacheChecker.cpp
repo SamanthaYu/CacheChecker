@@ -123,6 +123,10 @@ void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const 
     if (!cache)
         return;
 
+    outs() << ">  - Cache: ";
+    cache->dumpToStream(outs());
+    outs() << "\n";
+
     ProgramStateRef state = c.getState();
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
     if (!cacheSymbols)
@@ -130,26 +134,13 @@ void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const 
 
     std::set<SymbolRef>* symbolSet = cacheSymbols->symbolSet;
 
-    outs() << "SY - checkClearFn(): Iterating over cacheSymbols\n";
-
     // Invalidate all the symbols in this cache
     for (const auto& cacheSymbol : *symbolSet) {
-        // Erase this cache for each of these symbols in SymbolCacheMap
-        const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(cacheSymbol);
-        if (symbolCaches) {
-            symbolCaches->cacheSet->erase(cache);
-            state = state->set<SymbolCacheMap>(cacheSymbol, *symbolCaches);
-        }
-
-        // Update this symbol's state to INVALID
+        state = state->remove<SymbolCacheMap>(cacheSymbol);
         state = state->set<SymbolStateMap>(cacheSymbol, CacheState::getInvalid());
     }
 
-    outs() << "SY - checkClearFn(): Finished iterating\n";
-
-    // Clear the cached symbols for this cache within the CacheSymbolMap
-    symbolSet->clear();
-    state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    state = state->remove<CacheSymbolMap>(cache);
     c.addTransition(state);
 }
 
@@ -159,6 +150,10 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
     if (!cache)
         return;
 
+    outs() << ">  - Cache: ";
+    cache->dumpToStream(outs());
+    outs() << "\n";
+
     SymbolRef key = call.getArgSVal(1).getAsSymbol();
     if (!key)
         return;
@@ -166,9 +161,8 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
     ProgramStateRef state = c.getState();
 
     // If this symbol's state is invalid, then we report a use-after-free
-    if (!checkUseAfterFree(key, call.getSourceRange(), c)) {
+    if (!checkUseAfterFree(key, call.getSourceRange(), c))
         return;
-    }
 
     SymbolRef returnVal = call.getReturnValue().getAsSymbol();
     if (!returnVal)
@@ -199,28 +193,18 @@ void CacheChecker::checkRemoveFn(const CallEvent &call, CheckerContext &c) const
     if (!cache)
         return;
 
+    outs() << ">  - Cache: ";
+    cache->dumpToStream(outs());
+    outs() << "\n";
+
     SymbolRef key = call.getArgSVal(1).getAsSymbol();
     if (!key)
         return;
 
     // TODO(samanthayu): Handle tainted values
     ProgramStateRef state = c.getState();
-
-    // Remove this key from the CacheSymbolMap
-    const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
-    if (cacheSymbols) {
-        cacheSymbols->symbolSet->erase(key);
-        state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
-    }
-
-    // Remove this key from the SymbolCacheMap
-    const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(key);
-    if (symbolCaches) {
-        symbolCaches->cacheSet->erase(cache);
-        state = state->set<SymbolCacheMap>(key, *symbolCaches);
-    }
-
-    // Update this key to have an INVALID state
+    state = state->remove<CacheSymbolMap>(cache);
+    state = state->remove<SymbolCacheMap>(key);
     state = state->set<SymbolStateMap>(key, CacheState::getInvalid());
     c.addTransition(state);
 }
@@ -241,6 +225,10 @@ void CacheChecker::checkNewFn(const CallEvent &call, CheckerContext &c) const {
     if (!cache)
         return;
 
+    outs() << ">  - Cache: ";
+    cache->dumpToStream(outs());
+    outs() << "\n";
+
     ProgramStateRef state = c.getState();
 
     // Insert a new set for this cache into CacheSymbolMap
@@ -257,27 +245,40 @@ void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
     if (!cache)
         return;
 
-    SymbolRef key = call.getArgSVal(1).getAsSymbol();
+    outs() << ">  - Cache: ";
+    cache->dumpToStream(outs());
+    outs() << "\n";
+
+    SymbolRef key = call.getArgSVal(2).getAsSymbol();
     if (!key)
         return;
+
+    outs() << ">  - Key: ";
+    key->dumpToStream(outs());
+    outs() << "\n";
 
     ProgramStateRef state = c.getState();
 
     // Update CacheSymbolMap with this key
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
     if (cacheSymbols) {
+        outs() << "SY - Cache symbols\n";
         cacheSymbols->symbolSet->insert(key);
         state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
     }
 
     // Update SymbolCacheMap with this key
     const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(key);
-    if (!symbolCaches) {
+    if (symbolCaches) {
+        outs() << "SY - Symbol caches\n";
         symbolCaches->cacheSet->insert(cache);
+        outs() << "SY - Insert\n";
         state = state->set<SymbolCacheMap>(key, *symbolCaches);
+        outs() << "SY - Set cache\n";
     }
 
     // Update this key to have a VALID state
+    outs() << "SY - Valid state\n";
     state = state->set<SymbolStateMap>(key, CacheState::getValid());
     c.addTransition(state);
 }
