@@ -12,6 +12,7 @@
 
 using namespace clang;
 using namespace ento;
+using namespace llvm;
 
 struct CacheState {
 private:
@@ -117,24 +118,34 @@ CacheChecker::CacheChecker()
 }
 
 void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const {
+    outs() << "SY - checkClearFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
 
     ProgramStateRef state = c.getState();
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
+    if (!cacheSymbols)
+        return;
+
     std::set<SymbolRef>* symbolSet = cacheSymbols->symbolSet;
+
+    outs() << "SY - checkClearFn(): Iterating over cacheSymbols\n";
 
     // Invalidate all the symbols in this cache
     for (const auto& cacheSymbol : *symbolSet) {
         // Erase this cache for each of these symbols in SymbolCacheMap
         const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(cacheSymbol);
-        symbolCaches->cacheSet->erase(cache);
-        state = state->set<SymbolCacheMap>(cacheSymbol, *symbolCaches);
+        if (symbolCaches) {
+            symbolCaches->cacheSet->erase(cache);
+            state = state->set<SymbolCacheMap>(cacheSymbol, *symbolCaches);
+        }
 
         // Update this symbol's state to INVALID
         state = state->set<SymbolStateMap>(cacheSymbol, CacheState::getInvalid());
     }
+
+    outs() << "SY - checkClearFn(): Finished iterating\n";
 
     // Clear the cached symbols for this cache within the CacheSymbolMap
     symbolSet->clear();
@@ -143,6 +154,7 @@ void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const 
 }
 
 void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
+    outs() << "SY - checkGetFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
@@ -152,7 +164,6 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
         return;
 
     ProgramStateRef state = c.getState();
-    const CacheState* cacheState = state->get<SymbolStateMap>(key);
 
     // If this symbol's state is invalid, then we report a use-after-free
     if (!checkUseAfterFree(key, call.getSourceRange(), c)) {
@@ -165,13 +176,17 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
 
     // Track this return value in the CacheSymbolMap
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
-    cacheSymbols->symbolSet->insert(returnVal);
-    state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    if (cacheSymbols) {
+        cacheSymbols->symbolSet->insert(returnVal);
+        state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    }
 
     // Track this return value in the SymbolCacheMap
     const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(returnVal);
-    symbolCaches->cacheSet->insert(cache);
-    state = state->set<SymbolCacheMap>(returnVal, *symbolCaches);
+    if (symbolCaches) {
+        symbolCaches->cacheSet->insert(cache);
+        state = state->set<SymbolCacheMap>(returnVal, *symbolCaches);
+    }
 
     // Update this return value to have a VALID state
     state = state->set<SymbolStateMap>(returnVal, CacheState::getValid());
@@ -179,6 +194,7 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
 }
 
 void CacheChecker::checkRemoveFn(const CallEvent &call, CheckerContext &c) const {
+    outs() << "SY - checkRemoveFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
@@ -192,17 +208,20 @@ void CacheChecker::checkRemoveFn(const CallEvent &call, CheckerContext &c) const
 
     // Remove this key from the CacheSymbolMap
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
-    cacheSymbols->symbolSet->erase(key);
-    state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    if (cacheSymbols) {
+        cacheSymbols->symbolSet->erase(key);
+        state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    }
 
     // Remove this key from the SymbolCacheMap
     const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(key);
-    symbolCaches->cacheSet->erase(cache);
-    state = state->set<SymbolCacheMap>(key, *symbolCaches);
+    if (symbolCaches) {
+        symbolCaches->cacheSet->erase(cache);
+        state = state->set<SymbolCacheMap>(key, *symbolCaches);
+    }
 
     // Update this key to have an INVALID state
     state = state->set<SymbolStateMap>(key, CacheState::getInvalid());
-
     c.addTransition(state);
 }
 
@@ -217,6 +236,7 @@ void CacheChecker::checkPreCall(const CallEvent &call, CheckerContext &c) const 
 }
 
 void CacheChecker::checkNewFn(const CallEvent &call, CheckerContext &c) const {
+    outs() << "SY - checkNewFn()\n";
     SymbolRef cache = call.getReturnValue().getAsSymbol();
     if (!cache)
         return;
@@ -232,6 +252,7 @@ void CacheChecker::checkNewFn(const CallEvent &call, CheckerContext &c) const {
 }
 
 void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
+    outs() << "SY - checkPutFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
@@ -244,17 +265,20 @@ void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
 
     // Update CacheSymbolMap with this key
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
-    cacheSymbols->symbolSet->insert(key);
-    state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    if (cacheSymbols) {
+        cacheSymbols->symbolSet->insert(key);
+        state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
+    }
 
     // Update SymbolCacheMap with this key
     const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(key);
-    symbolCaches->cacheSet->insert(cache);
-    state = state->set<SymbolCacheMap>(key, *symbolCaches);
+    if (!symbolCaches) {
+        symbolCaches->cacheSet->insert(cache);
+        state = state->set<SymbolCacheMap>(key, *symbolCaches);
+    }
 
     // Update this key to have a VALID state
     state = state->set<SymbolStateMap>(key, CacheState::getValid());
-
     c.addTransition(state);
 }
 
@@ -267,6 +291,7 @@ void CacheChecker::checkPostCall(const CallEvent &call, CheckerContext &c) const
 }
 
 void CacheChecker::checkLocation(SVal sval, bool isLoad, const Stmt *s, CheckerContext &c) const {
+    outs() << "SY - checkLocation()\n";
     SymbolRef symbol = sval.getLocSymbolInBase();
     if (symbol) {
         checkUseAfterFree(symbol, s->getSourceRange(), c);
@@ -274,6 +299,7 @@ void CacheChecker::checkLocation(SVal sval, bool isLoad, const Stmt *s, CheckerC
 }
 
 bool CacheChecker::checkUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext& c) const {
+    outs() << "SY - checkUseAfterFree()\n";
     if (isSymbolValid(symbol, c)) {
         reportUseAfterFree(symbol, range, c);
         return true;
@@ -282,6 +308,7 @@ bool CacheChecker::checkUseAfterFree(SymbolRef symbol, SourceRange range, Checke
 }
 
 bool CacheChecker::isSymbolValid(SymbolRef cacheSymbol, CheckerContext& c) const {
+    outs() << "SY - isSymbolValid()\n";
     ProgramStateRef state = c.getState();
     const CacheState* cacheState = state->get<SymbolStateMap>(cacheSymbol);
     
@@ -292,6 +319,7 @@ bool CacheChecker::isSymbolValid(SymbolRef cacheSymbol, CheckerContext& c) const
 }
 
 void CacheChecker::reportUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext &c) const {
+    outs() << "SY - reportUseAfterFree()\n";
     // We reached a bug, stop exploring the path here by generating a sink.
     ExplodedNode *ErrNode = c.generateErrorNode();
 
