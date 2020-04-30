@@ -98,6 +98,8 @@ public:
     bool checkUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext& c) const;
     bool isSymbolValid(SymbolRef cacheSymbol, CheckerContext& c) const;
     void reportUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext &c) const;
+
+    void printSymbolStateMap(CheckerContext &c) const;
 };
 
 // A map from the hashmap to its cached symbols
@@ -126,10 +128,6 @@ void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const 
     if (!cache)
         return;
 
-    outs() << ">  - Cache: ";
-    cache->dumpToStream(outs());
-    outs() << "\n";
-
     ProgramStateRef state = c.getState();
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
     if (!cacheSymbols)
@@ -152,10 +150,6 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
-
-    outs() << ">  - Cache: ";
-    cache->dumpToStream(outs());
-    outs() << "\n";
 
     SymbolRef key = call.getArgSVal(1).getAsSymbol();
     if (!key)
@@ -196,10 +190,6 @@ void CacheChecker::checkRemoveFn(const CallEvent &call, CheckerContext &c) const
     if (!cache)
         return;
 
-    outs() << ">  - Cache: ";
-    cache->dumpToStream(outs());
-    outs() << "\n";
-
     SymbolRef key = call.getArgSVal(1).getAsSymbol();
     if (!key)
         return;
@@ -228,10 +218,6 @@ void CacheChecker::checkNewFn(const CallEvent &call, CheckerContext &c) const {
     if (!cache)
         return;
 
-    outs() << ">  - Cache: ";
-    cache->dumpToStream(outs());
-    outs() << "\n";
-
     ProgramStateRef state = c.getState();
 
     // Insert a new set for this cache into CacheSymbolMap
@@ -243,20 +229,17 @@ void CacheChecker::checkNewFn(const CallEvent &call, CheckerContext &c) const {
 }
 
 void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
-    outs() << "SY - checkPutFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
 
-    outs() << ">  - Cache: ";
-    cache->dumpToStream(outs());
-    outs() << "\n";
-
     SymbolRef key = call.getArgSVal(2).getAsSymbol();
     if (!key)
         return;
-
-    outs() << ">  - Key: ";
+    
+    outs() << "SY - checkPutFn(): Cache: ";
+    cache->dumpToStream(outs());
+    outs() << "; Key: ";
     key->dumpToStream(outs());
     outs() << "\n";
 
@@ -265,7 +248,6 @@ void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
     // Update CacheSymbolMap with this key
     const CacheSymbols* cacheSymbols = state->get<CacheSymbolMap>(cache);
     if (cacheSymbols) {
-        outs() << "SY - Cache symbols\n";
         cacheSymbols->symbolSet->insert(key);
         state = state->set<CacheSymbolMap>(cache, *cacheSymbols);
     }
@@ -273,15 +255,11 @@ void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
     // Update SymbolCacheMap with this key
     const SymbolCaches* symbolCaches = state->get<SymbolCacheMap>(key);
     if (symbolCaches) {
-        outs() << "SY - Symbol caches\n";
         symbolCaches->cacheSet->insert(cache);
-        outs() << "SY - Insert\n";
         state = state->set<SymbolCacheMap>(key, *symbolCaches);
-        outs() << "SY - Set cache\n";
     }
 
     // Update this key to have a VALID state
-    outs() << "SY - Valid state\n";
     state = state->set<SymbolStateMap>(key, CacheState::getValid());
     c.addTransition(state);
 }
@@ -302,23 +280,28 @@ void CacheChecker::checkLocation(SVal sval, bool isLoad, const Stmt *s, CheckerC
 }
 
 bool CacheChecker::checkUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext& c) const {
-    outs() << "SY - checkUseAfterFree()\n";
-    symbol->dumpToStream(outs());
-    outs() << "\n";
-    
-    if (isSymbolValid(symbol, c)) {
+    if (!isSymbolValid(symbol, c)) {
         reportUseAfterFree(symbol, range, c);
-        return true;
+        return false;
     }
-    return false;
+    return true;
 }
 
-bool CacheChecker::isSymbolValid(SymbolRef cacheSymbol, CheckerContext& c) const {
-    outs() << "SY - isSymbolValid()\n";
+bool CacheChecker::isSymbolValid(SymbolRef symbol, CheckerContext& c) const {
+    outs() << "SY - isSymbolValid(): ";
+    symbol->dumpToStream(outs());
+    outs() << "\n";
+    printSymbolStateMap(c);
+
     ProgramStateRef state = c.getState();
-    const CacheState* cacheState = state->get<SymbolStateMap>(cacheSymbol);
-    
-    if (!cacheState || *cacheState == CacheState::getInvalid()) {
+    const CacheState* cacheState = state->get<SymbolStateMap>(symbol);
+
+    // We return true if we have not tracked this symbol; e.g. Cache itself
+    if (!cacheState)
+        return true;
+
+    if (*cacheState == CacheState::getInvalid()) {
+        outs() << "ERROR\n";
         return false;
     }
     return true;
@@ -339,6 +322,16 @@ void CacheChecker::reportUseAfterFree(SymbolRef symbol, SourceRange range, Check
     report->markInteresting(symbol);
     report->addRange(range);
     c.emitReport(std::move(report));
+}
+
+void CacheChecker::printSymbolStateMap(CheckerContext &c) const {
+    ProgramStateRef state = c.getState();
+    SymbolStateMapTy symbolStateMap = state->get<SymbolStateMap>();
+    for (auto iter = symbolStateMap.begin(); iter != symbolStateMap.end(); iter++) {
+        outs() << ">  Key: ";
+        iter.getKey()->dumpToStream(outs());
+        outs() << "; Value: " << iter.getData().isValid() << "\n";
+    }
 }
 
 void ento::registerCacheChecker(CheckerManager &mgr) {
