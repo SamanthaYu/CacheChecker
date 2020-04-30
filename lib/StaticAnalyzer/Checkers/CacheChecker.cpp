@@ -75,7 +75,8 @@ public:
 };
 
 class CacheChecker : public Checker<check::PostCall,
-                                    check::PreCall> {
+                                    check::PreCall,
+                                    check::Location> {
 private:
     CallDescription hashmapNewFn, hashmapClearFn, hashmapPutFn, hashmapGetFn, hashmapRemoveFn;
     std::unique_ptr<BugType> cacheBugType;
@@ -109,8 +110,10 @@ REGISTER_MAP_WITH_PROGRAMSTATE(SymbolCacheMap, SymbolRef, SymbolCaches)
 REGISTER_MAP_WITH_PROGRAMSTATE(SymbolStateMap, SymbolRef, CacheState)
 
 CacheChecker::CacheChecker()
-        : hashmapNewFn("hashmap_new"), hashmapClearFn("hashmap_clear", 1),
-          hashmapPutFn("hashmap_put", 3), hashmapGetFn("hashmap_get", 2),
+        : hashmapNewFn("internal_hashmap_new"), // Use internal_hashmap_new() because hashmap_new() is just a macro
+          hashmapClearFn("hashmap_clear", 1),
+          hashmapPutFn("hashmap_put", 3),
+          hashmapGetFn("hashmap_get", 2),
           hashmapRemoveFn("hashmap_remove", 2) {
     // Initialize the bug types.
     cacheBugType.reset(
@@ -292,7 +295,6 @@ void CacheChecker::checkPostCall(const CallEvent &call, CheckerContext &c) const
 }
 
 void CacheChecker::checkLocation(SVal sval, bool isLoad, const Stmt *s, CheckerContext &c) const {
-    outs() << "SY - checkLocation()\n";
     SymbolRef symbol = sval.getLocSymbolInBase();
     if (symbol) {
         checkUseAfterFree(symbol, s->getSourceRange(), c);
@@ -301,6 +303,9 @@ void CacheChecker::checkLocation(SVal sval, bool isLoad, const Stmt *s, CheckerC
 
 bool CacheChecker::checkUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext& c) const {
     outs() << "SY - checkUseAfterFree()\n";
+    symbol->dumpToStream(outs());
+    outs() << "\n";
+    
     if (isSymbolValid(symbol, c)) {
         reportUseAfterFree(symbol, range, c);
         return true;
