@@ -1,6 +1,9 @@
+#include "clang/AST/Stmt.h"
 #include "clang/StaticAnalyzer/Checkers/BuiltinCheckerRegistration.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
+#include "clang/StaticAnalyzer/Core/PathSensitive/AnalysisManager.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CallEvent.h"
 #include "clang/StaticAnalyzer/Core/PathSensitive/CheckerContext.h"
 #include "clang/StaticAnalyzer/Frontend/CheckerRegistry.h"
@@ -123,7 +126,6 @@ CacheChecker::CacheChecker()
 }
 
 void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const {
-    outs() << "SY - checkClearFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
@@ -146,7 +148,6 @@ void CacheChecker::checkClearFn(const CallEvent &call, CheckerContext &c) const 
 }
 
 void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
-    outs() << "SY - checkGetFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
@@ -185,7 +186,6 @@ void CacheChecker::checkGetFn(const CallEvent &call, CheckerContext &c) const {
 }
 
 void CacheChecker::checkRemoveFn(const CallEvent &call, CheckerContext &c) const {
-    outs() << "SY - checkRemoveFn()\n";
     SymbolRef cache = call.getArgSVal(0).getAsSymbol();
     if (!cache)
         return;
@@ -213,7 +213,6 @@ void CacheChecker::checkPreCall(const CallEvent &call, CheckerContext &c) const 
 }
 
 void CacheChecker::checkNewFn(const CallEvent &call, CheckerContext &c) const {
-    outs() << "SY - checkNewFn()\n";
     SymbolRef cache = call.getReturnValue().getAsSymbol();
     if (!cache)
         return;
@@ -236,12 +235,6 @@ void CacheChecker::checkPutFn(const CallEvent &call, CheckerContext &c) const {
     SymbolRef key = call.getArgSVal(2).getAsSymbol();
     if (!key)
         return;
-    
-    outs() << "SY - checkPutFn(): Cache: ";
-    cache->dumpToStream(outs());
-    outs() << "; Key: ";
-    key->dumpToStream(outs());
-    outs() << "\n";
 
     ProgramStateRef state = c.getState();
 
@@ -288,11 +281,6 @@ bool CacheChecker::checkUseAfterFree(SymbolRef symbol, SourceRange range, Checke
 }
 
 bool CacheChecker::isSymbolValid(SymbolRef symbol, CheckerContext& c) const {
-    outs() << "SY - isSymbolValid(): ";
-    symbol->dumpToStream(outs());
-    outs() << "\n";
-    printSymbolStateMap(c);
-
     ProgramStateRef state = c.getState();
     const CacheState* cacheState = state->get<SymbolStateMap>(symbol);
 
@@ -301,14 +289,13 @@ bool CacheChecker::isSymbolValid(SymbolRef symbol, CheckerContext& c) const {
         return true;
 
     if (*cacheState == CacheState::getInvalid()) {
-        outs() << "ERROR\n";
+        outs() << "ERROR: Found cache use-after-free\n";
         return false;
     }
     return true;
 }
 
 void CacheChecker::reportUseAfterFree(SymbolRef symbol, SourceRange range, CheckerContext &c) const {
-    outs() << "SY - reportUseAfterFree()\n";
     // We reached a bug, stop exploring the path here by generating a sink.
     ExplodedNode *ErrNode = c.generateErrorNode();
 
