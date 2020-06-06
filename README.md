@@ -87,4 +87,6 @@
 
 ## Tests
 We created tests for this custom checker in https://github.com/SamanthaYu/systemd/pull/1
-![Cache checker detecting a use-after-free in an example scenario](cmpt416_CacheChecker.jpg)
+<br/>
+<img src="cmpt416_CacheChecker.jpg" alt="Cache checker detecting a use-after-free in an example scenario" width="650">
+
